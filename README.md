@@ -27,3 +27,18 @@ python demo_arc_track.py
 - `CROSS_SECTION_HEIGHT`：矩形截面高度（Z方向）
 - `ARC_DEGREES`：圆弧角度
 - `SEGMENTS`：离散段数
+
+---
+
+## 额外示例：球形星球 + 长方体卫星
+
+新增 `planet_satellite_demo.py`：
+- 绘制带经纬线的球形星球；
+- 绘制长方体卫星，且 6 个面使用不同颜色；
+- 卫星沿轨道运动并自转。
+
+运行：
+
+```bash
+python planet_satellite_demo.py
+```
