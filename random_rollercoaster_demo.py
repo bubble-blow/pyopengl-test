@@ -9,8 +9,9 @@ from OpenGL.GLUT import *
 WINDOW_W, WINDOW_H = 1280, 800
 
 # 轨道与运动参数
-POINT_COUNT = 700
-STEP_LEN = 0.35
+CONTROL_POINT_COUNT = 75
+CONTROL_STEP_LEN = 2.4
+SPLINE_SAMPLES_PER_SEG = 12
 MIN_CURVATURE_RADIUS = 6.0   # 曲率半径下限：越大弯越缓
 TRACK_WIDTH = 0.8
 TRACK_HEIGHT = 0.18
@@ -72,14 +73,14 @@ def tangent_from_angles(yaw, pitch):
     return v_unit((cp * math.cos(yaw), cp * math.sin(yaw), math.sin(pitch)))
 
 
-def build_random_path(n=POINT_COUNT, step=STEP_LEN, r_min=MIN_CURVATURE_RADIUS):
-    """构建随机但曲率受限的3D轨道中心线。"""
+def build_control_points(n=CONTROL_POINT_COUNT, step=CONTROL_STEP_LEN, r_min=MIN_CURVATURE_RADIUS):
+    """先生成离散控制点（曲率受限）。"""
     pts = [(0.0, 0.0, 4.0)]
     yaw = 0.0
     pitch = 0.0
 
     # 每步允许的方向变化角上限，确保近似曲率半径不小于 r_min
-    max_turn = min(0.24, step / r_min)
+    max_turn = min(0.22, step / r_min)
 
     for i in range(1, n):
         # 缓慢随机改变偏航和俯仰，避免急弯
@@ -100,20 +101,46 @@ def build_random_path(n=POINT_COUNT, step=STEP_LEN, r_min=MIN_CURVATURE_RADIUS):
     return pts
 
 
-def smooth_polyline(pts, rounds=2):
-    data = pts[:]
-    for _ in range(rounds):
-        nxt = [data[0]]
-        for i in range(1, len(data) - 1):
-            a, b, c = data[i - 1], data[i], data[i + 1]
-            nxt.append((
-                0.2 * a[0] + 0.6 * b[0] + 0.2 * c[0],
-                0.2 * a[1] + 0.6 * b[1] + 0.2 * c[1],
-                0.2 * a[2] + 0.6 * b[2] + 0.2 * c[2],
-            ))
-        nxt.append(data[-1])
-        data = nxt
-    return data
+def catmull_rom(p0, p1, p2, p3, u):
+    """Catmull-Rom 样条单段插值。"""
+    u2 = u * u
+    u3 = u2 * u
+    return (
+        0.5 * (
+            2 * p1[0]
+            + (-p0[0] + p2[0]) * u
+            + (2 * p0[0] - 5 * p1[0] + 4 * p2[0] - p3[0]) * u2
+            + (-p0[0] + 3 * p1[0] - 3 * p2[0] + p3[0]) * u3
+        ),
+        0.5 * (
+            2 * p1[1]
+            + (-p0[1] + p2[1]) * u
+            + (2 * p0[1] - 5 * p1[1] + 4 * p2[1] - p3[1]) * u2
+            + (-p0[1] + 3 * p1[1] - 3 * p2[1] + p3[1]) * u3
+        ),
+        0.5 * (
+            2 * p1[2]
+            + (-p0[2] + p2[2]) * u
+            + (2 * p0[2] - 5 * p1[2] + 4 * p2[2] - p3[2]) * u2
+            + (-p0[2] + 3 * p1[2] - 3 * p2[2] + p3[2]) * u3
+        ),
+    )
+
+
+def build_spline_path(ctrl_pts, samples_per_seg=SPLINE_SAMPLES_PER_SEG):
+    """使用离散控制点 + Catmull-Rom 样条生成平滑轨道。"""
+    if len(ctrl_pts) < 4:
+        return ctrl_pts[:]
+
+    out = []
+    ext = [ctrl_pts[0]] + ctrl_pts + [ctrl_pts[-1]]
+    for i in range(1, len(ext) - 2):
+        p0, p1, p2, p3 = ext[i - 1], ext[i], ext[i + 1], ext[i + 2]
+        for k in range(samples_per_seg):
+            u = k / float(samples_per_seg)
+            out.append(catmull_rom(p0, p1, p2, p3, u))
+    out.append(ctrl_pts[-1])
+    return out
 
 
 def compute_arclengths(pts):
@@ -418,8 +445,8 @@ def build_scene():
     global path_points, arc_lengths, speeds, frames
 
     random.seed(42)
-    raw = build_random_path()
-    path_points = smooth_polyline(raw, rounds=3)
+    ctrl = build_control_points()
+    path_points = build_spline_path(ctrl)
     arc_lengths = compute_arclengths(path_points)
     speeds = compute_speeds(path_points)
     frames = compute_frames(path_points, arc_lengths, speeds)
@@ -443,6 +470,7 @@ def main():
     print("\n=== 控制说明 ===")
     print("Q / ESC: 退出")
     print(f"最小曲率半径约束: {MIN_CURVATURE_RADIUS:.2f}")
+    print(f"离散控制点: {CONTROL_POINT_COUNT}, 每段样条采样: {SPLINE_SAMPLES_PER_SEG}")
     print("轨道顶面法线来自视重方向投影（顶面与视重方向垂直）\n")
 
     glutMainLoop()
