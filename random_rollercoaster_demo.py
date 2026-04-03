@@ -315,7 +315,7 @@ def draw_axes(length=6.0):
     glEnable(GL_LIGHTING)
 
 
-def draw_ground(size=320.0, z=-3.0):
+def draw_ground(size=320.0, z=-8.0):
     """绘制纯色地面。"""
     half = size * 0.5
     glMaterialfv(GL_FRONT_AND_BACK, GL_AMBIENT_AND_DIFFUSE, (0.18, 0.42, 0.22, 1.0))
