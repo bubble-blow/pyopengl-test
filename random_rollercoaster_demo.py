@@ -315,6 +315,19 @@ def draw_axes(length=6.0):
     glEnable(GL_LIGHTING)
 
 
+def draw_ground(size=320.0, z=-3.0):
+    """绘制纯色地面。"""
+    half = size * 0.5
+    glMaterialfv(GL_FRONT_AND_BACK, GL_AMBIENT_AND_DIFFUSE, (0.18, 0.42, 0.22, 1.0))
+    glNormal3f(0.0, 0.0, 1.0)
+    glBegin(GL_QUADS)
+    glVertex3f(-half, -half, z)
+    glVertex3f(half, -half, z)
+    glVertex3f(half, half, z)
+    glVertex3f(-half, half, z)
+    glEnd()
+
+
 def draw_track():
     half_w = TRACK_WIDTH * 0.5
     h = TRACK_HEIGHT
@@ -445,6 +458,7 @@ def display():
               n[0], n[1], n[2])
 
     draw_axes(4.5)
+    draw_ground()
     draw_track()
     draw_car(car_s)
 
