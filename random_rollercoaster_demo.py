@@ -101,44 +101,77 @@ def build_control_points(n=CONTROL_POINT_COUNT, step=CONTROL_STEP_LEN, r_min=MIN
     return pts
 
 
-def catmull_rom(p0, p1, p2, p3, u):
-    """Catmull-Rom 样条单段插值。"""
-    u2 = u * u
-    u3 = u2 * u
-    return (
-        0.5 * (
-            2 * p1[0]
-            + (-p0[0] + p2[0]) * u
-            + (2 * p0[0] - 5 * p1[0] + 4 * p2[0] - p3[0]) * u2
-            + (-p0[0] + 3 * p1[0] - 3 * p2[0] + p3[0]) * u3
-        ),
-        0.5 * (
-            2 * p1[1]
-            + (-p0[1] + p2[1]) * u
-            + (2 * p0[1] - 5 * p1[1] + 4 * p2[1] - p3[1]) * u2
-            + (-p0[1] + 3 * p1[1] - 3 * p2[1] + p3[1]) * u3
-        ),
-        0.5 * (
-            2 * p1[2]
-            + (-p0[2] + p2[2]) * u
-            + (2 * p0[2] - 5 * p1[2] + 4 * p2[2] - p3[2]) * u2
-            + (-p0[2] + 3 * p1[2] - 3 * p2[2] + p3[2]) * u3
-        ),
-    )
+def natural_cubic_second_derivatives(values):
+    """
+    一维自然三次样条的二阶导数 M_i（端点 M_0=M_n=0），
+    对等距参数 t=i 求解，保证 C2 连续。
+    """
+    n = len(values)
+    if n <= 2:
+        return [0.0] * n
+
+    # 三对角系统（自然边界、等距节点）
+    # M_{i-1} + 4 M_i + M_{i+1} = 6(y_{i+1} - 2y_i + y_{i-1}), i=1..n-2
+    a = [0.0] * (n - 2)
+    b = [0.0] * (n - 2)
+    c = [0.0] * (n - 2)
+    d = [0.0] * (n - 2)
+
+    for i in range(n - 2):
+        a[i] = 1.0 if i > 0 else 0.0
+        b[i] = 4.0
+        c[i] = 1.0 if i < n - 3 else 0.0
+        j = i + 1
+        d[i] = 6.0 * (values[j + 1] - 2.0 * values[j] + values[j - 1])
+
+    # Thomas 算法
+    for i in range(1, n - 2):
+        w = a[i] / b[i - 1]
+        b[i] -= w * c[i - 1]
+        d[i] -= w * d[i - 1]
+
+    m_inner = [0.0] * (n - 2)
+    m_inner[-1] = d[-1] / b[-1]
+    for i in range(n - 4, -1, -1):
+        m_inner[i] = (d[i] - c[i] * m_inner[i + 1]) / b[i]
+
+    return [0.0] + m_inner + [0.0]
 
 
 def build_spline_path(ctrl_pts, samples_per_seg=SPLINE_SAMPLES_PER_SEG):
-    """使用离散控制点 + Catmull-Rom 样条生成平滑轨道。"""
-    if len(ctrl_pts) < 4:
+    """使用离散控制点 + 自然三次样条生成平滑轨道（C2 连续）。"""
+    n = len(ctrl_pts)
+    if n < 2:
         return ctrl_pts[:]
 
+    xs = [p[0] for p in ctrl_pts]
+    ys = [p[1] for p in ctrl_pts]
+    zs = [p[2] for p in ctrl_pts]
+
+    mx = natural_cubic_second_derivatives(xs)
+    my = natural_cubic_second_derivatives(ys)
+    mz = natural_cubic_second_derivatives(zs)
+
     out = []
-    ext = [ctrl_pts[0]] + ctrl_pts + [ctrl_pts[-1]]
-    for i in range(1, len(ext) - 2):
-        p0, p1, p2, p3 = ext[i - 1], ext[i], ext[i + 1], ext[i + 2]
+    # 每段 [i, i+1]，节点间距 h=1
+    for i in range(n - 1):
+        x0, x1 = xs[i], xs[i + 1]
+        y0, y1 = ys[i], ys[i + 1]
+        z0, z1 = zs[i], zs[i + 1]
+        m0x, m1x = mx[i], mx[i + 1]
+        m0y, m1y = my[i], my[i + 1]
+        m0z, m1z = mz[i], mz[i + 1]
+
         for k in range(samples_per_seg):
-            u = k / float(samples_per_seg)
-            out.append(catmull_rom(p0, p1, p2, p3, u))
+            u = k / float(samples_per_seg)   # [0,1)
+            a = 1.0 - u
+            b = u
+            # 自然三次样条基函数（h=1）
+            sx = a * x0 + b * x1 + ((a * a * a - a) * m0x + (b * b * b - b) * m1x) / 6.0
+            sy = a * y0 + b * y1 + ((a * a * a - a) * m0y + (b * b * b - b) * m1y) / 6.0
+            sz = a * z0 + b * z1 + ((a * a * a - a) * m0z + (b * b * b - b) * m1z) / 6.0
+            out.append((sx, sy, sz))
+
     out.append(ctrl_pts[-1])
     return out
 
@@ -471,6 +504,7 @@ def main():
     print("Q / ESC: 退出")
     print(f"最小曲率半径约束: {MIN_CURVATURE_RADIUS:.2f}")
     print(f"离散控制点: {CONTROL_POINT_COUNT}, 每段样条采样: {SPLINE_SAMPLES_PER_SEG}")
+    print("插值方式: 自然三次样条（C2 连续）")
     print("轨道顶面法线来自视重方向投影（顶面与视重方向垂直）\n")
 
     glutMainLoop()
