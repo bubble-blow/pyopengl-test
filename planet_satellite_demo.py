@@ -9,17 +9,18 @@ from OpenGL.GLUT import *
 WINDOW_W, WINDOW_H = 1100, 760
 
 # 行星参数
-PLANET_RADIUS = 1.2      # 行星半径
+PLANET_RADIUS = 2.6      # 行星半径（超大行星）
 LAT_STEPS = 16           # 纬线分段数（绘制经纬网格用）
 LON_STEPS = 24           # 经线分段数
 
 # 卫星参数（长方体）
-SAT_W, SAT_H, SAT_D = 0.5, 0.25, 0.2  # 卫星的长、高、宽
-ORBIT_RADIUS = 2.4       # 卫星轨道半径
+SAT_W, SAT_H, SAT_D = 0.3, 0.15, 0.12  # 卫星的长、高、宽（缩小）
+ORBIT_RADIUS = 3.0       # 卫星轨道半径（近距离贴近行星表面）
 
 # 视角控制变量
 rot_x, rot_y = 18.0, -30.0  # 绕 X 轴和 Y 轴的旋转角度
 zoom = 1.0                  # 缩放系数
+cam_yaw = 0.0               # 相机水平朝向角（仅旋转朝向，不改变坐标）
 orbit_angle = 0.0           # 卫星轨道角度（度数）
 
 
@@ -142,15 +143,15 @@ def draw_colored_cuboid(w, h, d):
 def draw_satellite():
     """
     绘制卫星（绕行星公转的长方体）
-    轨道为椭圆，并在 Z 轴方向有小幅摆动
+    轨道固定在 X-Y 平面，Z 轴位置锁定为 0
     """
     global orbit_angle
     t = math.radians(orbit_angle)        # 角度转弧度
     
-    # 计算卫星位置（X-Y平面圆形轨道，Z轴正弦摆动）
+    # 计算卫星位置（X-Y 平面圆形轨道，Z 轴锁定）
     x = ORBIT_RADIUS * math.cos(t)
     y = ORBIT_RADIUS * math.sin(t)
-    z = 0.35 * math.sin(2.0 * t)               # Z轴方向上下摆动
+    z = 0.0                                    # 锁定在轨道平面
     
     glPushMatrix()                       # 保存当前变换矩阵
     glTranslatef(x, y, z)                # 平移到卫星位置
@@ -203,11 +204,19 @@ def display():
     glLoadIdentity()                                    # 重置模型视图矩阵
 
     # 设置摄像机位置和朝向
-    # 眼睛位置：(0, -6/zoom, 3.5/zoom)，缩放影响距离
+    # 眼睛位置保持略大于轨道半径，缩放影响距离
+    cam_dist = ORBIT_RADIUS + 0.2
+    eye_x, eye_y, eye_z = 0.0, -cam_dist / zoom, 0.8 / zoom
+    # 基础前向向量（默认看向原点），仅在水平面内做偏航旋转
+    forward_x, forward_y, forward_z = 0.0, cam_dist / zoom, -0.8 / zoom
+    yaw = math.radians(cam_yaw)
+    look_x = eye_x + (forward_x * math.cos(yaw) - forward_y * math.sin(yaw))
+    look_y = eye_y + (forward_x * math.sin(yaw) + forward_y * math.cos(yaw))
+    look_z = eye_z + forward_z
     # 观察中心点：(0, 0, 0)
     # 向上方向：(0, 0, 1) 即 Z 轴向上
-    gluLookAt(0.0, -6.0 / zoom, 3.5 / zoom,
-              0.0, 0.0, 0.0,
+    gluLookAt(eye_x, eye_y, eye_z,
+              look_x, look_y, look_z,
               0.0, 0.0, 1.0)
 
     # 应用用户控制的旋转（绕 X 和 Z 轴）
@@ -235,7 +244,7 @@ def keyboard(key, _x, _y):
     """
     普通按键回调函数
     """
-    global zoom
+    global zoom, cam_yaw
     k = key.decode("utf-8", errors="ignore").lower()  # 解码并转为小写
     if k == 'q' or ord(key) == 27:   # Q 键或 ESC 键退出
         sys.exit(0)
@@ -243,6 +252,10 @@ def keyboard(key, _x, _y):
         zoom *= 1.08
     if k == '-':                     # 缩小
         zoom /= 1.08
+    if k == 'a':                     # 相机水平向左转头（不移动相机位置）
+        cam_yaw += 3.0
+    if k == 'd':                     # 相机水平向右转头（不移动相机位置）
+        cam_yaw -= 3.0
     glutPostRedisplay()              # 重绘
 
 
@@ -284,6 +297,7 @@ def main():
     print("\n=== 控制说明 ===")
     print("方向键: 旋转视角")
     print("+ / - : 缩放")
+    print("A / D : 相机水平转向（不移动相机位置）")
     print("Q 或 ESC: 退出\n")
 
     glutMainLoop()                # 进入 GLUT 主循环
